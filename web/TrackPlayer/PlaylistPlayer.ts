@@ -1,7 +1,11 @@
 import { Player } from './Player';
+import { State } from './State';
 
-import { State } from '../../src/constants/State';
-import type { Track } from '../../src/types';
+import type {
+  Track,
+  State as StateType,
+  RepeatMode as RepeatModeType,
+} from '../../src/features';
 import { RepeatMode } from './RepeatMode';
 
 export class PlaylistPlayer extends Player {
@@ -9,33 +13,33 @@ export class PlaylistPlayer extends Player {
   protected playlist: Track[] = [];
   protected lastIndex?: number;
   protected _currentIndex?: number;
-  protected repeatMode: RepeatMode = RepeatMode.Off;
+  protected repeatMode: RepeatModeType = RepeatMode.Off;
 
-  protected async onStateUpdate(state: Exclude<State, State.Error>) {
+  protected onStateUpdate(state: Exclude<StateType, 'error'>) {
     super.onStateUpdate(state);
 
     if (state === State.Ended) {
-      await this.onTrackEnded();
+      this.onTrackEnded();
     }
   }
 
-  protected async onTrackEnded() {
+  protected onTrackEnded() {
     switch (this.repeatMode) {
       case RepeatMode.Track:
         if (this.currentIndex !== undefined) {
-          await this.goToIndex(this.currentIndex);
+          this.goToIndex(this.currentIndex);
         }
         break;
       case RepeatMode.Playlist:
         if (this.currentIndex === this.playlist.length - 1) {
-          await this.goToIndex(0);
+          this.goToIndex(0);
         } else {
-          await this.skipToNext();
+          this.skipToNext();
         }
         break;
       default:
         try {
-          await this.skipToNext();
+          this.skipToNext();
         } catch (err) {
           if ((err as Error).message !== 'playlist_exhausted') {
             throw err;
@@ -59,28 +63,32 @@ export class PlaylistPlayer extends Player {
     this._currentIndex = current;
   }
 
-  protected async goToIndex(index: number, initialPosition?: number) {
+  protected goToIndex(index: number, initialPosition?: number) {
     const track = this.playlist[index];
 
     if (!track) {
       throw new Error('playlist_exhausted');
     }
 
+    const onCompletedLoading = () => {
+      if (initialPosition) {
+        this.seekTo(initialPosition);
+      }
+
+      if (this.playWhenReady) {
+        this.play();
+      }
+    };
+
     if (this.currentIndex !== index) {
       this.currentIndex = index;
-      await this.load(track);
-    }
-
-    if (initialPosition) {
-      this.seekTo(initialPosition);
-    }
-
-    if (this.playWhenReady) {
-      await this.play();
+      this.load(track, onCompletedLoading);
+    } else {
+      onCompletedLoading();
     }
   }
 
-  public async add(tracks: Track[], insertBeforeIndex?: number) {
+  public add(tracks: Track[], insertBeforeIndex?: number) {
     if (insertBeforeIndex !== -1 && insertBeforeIndex !== undefined) {
       this.playlist.splice(insertBeforeIndex, 0, ...tracks);
     } else {
@@ -88,40 +96,40 @@ export class PlaylistPlayer extends Player {
     }
 
     if (this.currentIndex === undefined) {
-      await this.goToIndex(0);
+      this.goToIndex(0);
     }
   }
 
-  public async skip(index: number, initialPosition?: number) {
+  public skip(index: number, initialPosition?: number) {
     const track = this.playlist[index];
 
     if (track === undefined) {
       throw new Error('index out of bounds');
     }
 
-    await this.goToIndex(index, initialPosition);
+    this.goToIndex(index, initialPosition);
   }
 
-  public async skipToNext(initialPosition?: number) {
+  public skipToNext(initialPosition?: number) {
     if (this.currentIndex === undefined) return;
 
     const index = this.currentIndex + 1;
-    await this.goToIndex(index, initialPosition);
+    this.goToIndex(index, initialPosition);
   }
 
-  public async skipToPrevious(initialPosition?: number) {
+  public skipToPrevious(initialPosition?: number) {
     if (this.currentIndex === undefined) return;
 
     const index = this.currentIndex - 1;
-    await this.goToIndex(index, initialPosition);
+    this.goToIndex(index, initialPosition);
   }
 
-  public getTrack(index: number): Track | null {
+  public getTrack(index: number): Track | undefined {
     const track = this.playlist[index];
-    return track || null;
+    return track;
   }
 
-  public setRepeatMode(mode: RepeatMode) {
+  public setRepeatMode(mode: RepeatModeType) {
     this.repeatMode = mode;
   }
 
@@ -129,7 +137,7 @@ export class PlaylistPlayer extends Player {
     return this.repeatMode;
   }
 
-  public async remove(indexes: number[]) {
+  public remove(indexes: number[]) {
     const idxMap = indexes.reduce<Record<number, boolean>>((acc, elem) => {
       acc[elem] = true;
       return acc;
@@ -151,28 +159,31 @@ export class PlaylistPlayer extends Player {
 
     const hasItems = this.playlist.length > 0;
     if (isCurrentRemoved && hasItems) {
-      await this.goToIndex(this.currentIndex % this.playlist.length);
+      this.goToIndex(this.currentIndex % this.playlist.length);
     } else if (isCurrentRemoved) {
-      await this.stop();
+      this.stop();
     }
   }
 
-  public async stop() {
-    await super.stop();
-    this.currentIndex = undefined;
+  public stop(onComplete?: () => void) {
+    super.stop(() => {
+      this.currentIndex = undefined;
+      onComplete?.();
+    });
   }
 
-  public async reset() {
-    await this.stop();
-    this.playlist = [];
+  public reset() {
+    this.stop(() => {
+      this.playlist = [];
+    });
   }
 
-  public async removeUpcomingTracks() {
+  public removeUpcomingTracks() {
     if (this.currentIndex === undefined) return;
     this.playlist = this.playlist.slice(0, this.currentIndex + 1);
   }
 
-  public async move(fromIndex: number, toIndex: number): Promise<void> {
+  public move(fromIndex: number, toIndex: number): void {
     if (!this.playlist[fromIndex]) {
       throw new Error('index out of bounds');
     }

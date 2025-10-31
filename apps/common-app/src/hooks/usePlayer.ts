@@ -33,7 +33,7 @@ export function useSetupPlayer() {
           'jump-backward',
           'jump-forward',
         ],
-        progressUpdateEventInterval: 2
+        progressUpdateEventInterval: 2,
       });
       if (unmounted) return;
       setPlayerReady(true);

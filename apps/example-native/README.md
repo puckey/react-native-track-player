@@ -10,7 +10,7 @@ git clone git@github.com:DoubleSymmetry/react-native-track-player.git
 cd react-native-track-player
 yarn
 yarn build
-cd example
+cd apps/example-native
 yarn
 cd ios && pod install && cd ..
 ```
@@ -31,14 +31,14 @@ yarn dev
 
 The above command will automatically watch for changes int the `src` folder
 and recompile them while you work. Then they'll get automatically reloaded
-in a running instance of the `example` app so you can see your changes.
+in a running instance of the `example-native` app so you can see your changes.
 
 ## iOS Native
 
 It's recommended that you make your changes directly in XCode. Which you can
 open quickly by running one of the following commands:
 
-From inside the `example` directory:
+From inside the `example-native` directory:
 
 ```sh
 yarn ios:ide
@@ -65,7 +65,7 @@ android project in Android Studio and modifying the source:
 
 **macOS Ex**
 
-From inside the `example` directory:
+From inside the `example-native` directory:
 
 ```sh
 yarn android:ide

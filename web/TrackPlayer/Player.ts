@@ -1,6 +1,12 @@
-import { State } from '../../src/constants/State';
-import type { PlaybackState, Progress, Track } from '../../src/types';
+import { State } from './State';
+import type {
+  PlaybackState,
+  Progress,
+  Track,
+  State as StateType,
+} from '../../src/features';
 import { SetupNotCalledError } from './SetupNotCalledError';
+import type shaka from 'shaka-player/dist/shaka-player.ui';
 
 export class Player {
   protected hasInitialized = false;
@@ -19,10 +25,10 @@ export class Player {
   }
 
   // state getter/setter
-  public get state(): PlaybackState {
+  protected get state(): PlaybackState {
     return this._state;
   }
-  public set state(newState: PlaybackState) {
+  protected set state(newState: PlaybackState) {
     this._state = newState;
   }
 
@@ -55,8 +61,10 @@ export class Player {
       this.state = {
         state: State.Error,
         error: {
-          code: 'not_supported',
-          message: 'Browser not supported.',
+          error: {
+            code: 'not_supported',
+            message: 'Browser not supported...',
+          },
         },
       };
       throw new Error('Browser not supported.');
@@ -65,6 +73,7 @@ export class Player {
     // build dom element and attach shaka-player
     this.element = document.createElement('audio');
     this.element.setAttribute('id', 'react-native-track-player');
+    document.body.appendChild(this.element);
     this.player = new shaka.Player();
     this.player?.attach(this.element);
 
@@ -98,6 +107,8 @@ export class Player {
     this.player!.addEventListener('buffering', ({ buffering }: any) => {
       if (buffering === true) {
         this.onStateUpdate(State.Buffering);
+      } else {
+        this.onStateUpdate(State.Ready);
       }
     });
 
@@ -110,7 +121,7 @@ export class Player {
   /**
    * event handlers
    */
-  protected onStateUpdate(state: Exclude<State, State.Error>) {
+  protected onStateUpdate(state: Exclude<StateType, 'error'>) {
     this.state = { state };
   }
 
@@ -120,8 +131,10 @@ export class Player {
     this.state = {
       state: State.Error,
       error: {
-        code: error.code.toString(),
-        message: error.message,
+        error: {
+          code: error.code.toString(),
+          message: error.message,
+        },
       },
     };
 
@@ -130,36 +143,49 @@ export class Player {
   }
 
   /**
-   * player control
+   * NOTE: this method is sync despite the actual load being async. This
+   * behavior is intentional as it mirrors what happens in Android. State
+   * changes should be captured by event listeners.
    */
-  public async load(track: Track) {
+  public load(track: Track, onComplete?: (track: Track) => void) {
     if (!this.player) throw new SetupNotCalledError();
-    await this.player.load(track.url as string);
-    this.current = track;
+    this.player.load(track.url as string).then(() => {
+      this.current = track;
+      onComplete?.(track);
+    });
   }
 
-  public async retry() {
-    if (!this.player) throw new SetupNotCalledError();
-    this.player.retryStreaming();
-  }
-
-  public async stop() {
+  /**
+   * NOTE: this method is sync despite the actual load being async. This
+   * behavior is intentional as it mirrors what happens in Android. State
+   * changes should be captured by event listeners.
+   */
+  public stop(onComplete?: () => void) {
     if (!this.player) throw new SetupNotCalledError();
     this.current = undefined;
-    await this.player.unload();
+    this.player.unload().then(() => onComplete?.());
   }
 
+  /**
+   * NOTE: this method is sync despite the actual load being async. This
+   * behavior is intentional as it mirrors what happens in Android. State
+   * changes should be captured by event listeners.
+   */
   public play() {
     if (!this.element) throw new SetupNotCalledError();
     this.playWhenReady = true;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return this.element.play().catch((err: any) => console.error(err));
+    this.element.play().catch((err: unknown) => console.error(err));
+  }
+
+  public retry() {
+    if (!this.player) throw new SetupNotCalledError();
+    this.player.retryStreaming();
   }
 
   public pause() {
     if (!this.element) throw new SetupNotCalledError();
     this.playWhenReady = false;
-    return this.element.pause();
+    this.element.pause();
   }
 
   public togglePlayback() {

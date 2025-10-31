@@ -4,7 +4,7 @@ import { skipToNext, skipToPrevious } from './queue';
 
 // MARK: - Handlers State
 
-const customHandlers = new Map<string, any>();
+const customHandlers = new Map<string, Function>();
 
 // MARK: - Event Interfaces
 
@@ -66,7 +66,6 @@ export interface RemoteSkipEvent {
   index: number;
 }
 
-
 // MARK: - Default Handlers
 
 // Install remote control handlers with default behavior immediately when module loads
@@ -119,7 +118,8 @@ TrackPlayer.onRemoteStop(() => {
 });
 
 // Seek controls
-TrackPlayer.onRemoteSeek((event: any) => {
+TrackPlayer.onRemoteSeek((e: unknown) => {
+  const event = e as RemoteSeekEvent;
   const customHandler = customHandlers.get('seek');
   if (customHandler) {
     customHandler(event);
@@ -128,7 +128,8 @@ TrackPlayer.onRemoteSeek((event: any) => {
   }
 });
 
-TrackPlayer.onRemoteJumpForward((event: any) => {
+TrackPlayer.onRemoteJumpForward((e: unknown) => {
+  const event = e as RemoteJumpForwardEvent;
   const customHandler = customHandlers.get('jumpForward');
   if (customHandler) {
     customHandler(event);
@@ -137,7 +138,8 @@ TrackPlayer.onRemoteJumpForward((event: any) => {
   }
 });
 
-TrackPlayer.onRemoteJumpBackward((event: any) => {
+TrackPlayer.onRemoteJumpBackward((e: unknown) => {
+  const event = e as RemoteJumpBackwardEvent;
   const customHandler = customHandlers.get('jumpBackward');
   if (customHandler) {
     customHandler(event);
@@ -409,4 +411,3 @@ export function onRemoteSkip(
 export function onRemoteStop(callback: () => void): () => void {
   return TrackPlayer.onRemoteStop(callback).remove;
 }
-

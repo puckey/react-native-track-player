@@ -27,7 +27,7 @@ export type AndroidAutoGetSearchResultsEvent = {
   /** The search query */
   query: string;
   /** Optional search parameters */
-  extras?: Record<string, any>;
+  extras?: Record<string, unknown>;
   /** Page number for pagination */
   page: number;
   /** Maximum items per page */
@@ -82,7 +82,7 @@ function onGetChildren(
 function onGetSearchResults(
   callback: (event: {
     query: string;
-    extras?: Record<string, any>;
+    extras?: Record<string, unknown>;
     page: number;
     pageSize: number;
   }) => Promise<{
@@ -90,16 +90,15 @@ function onGetSearchResults(
     total?: number;
   }>,
 ): () => void {
-  return TrackPlayer.onGetSearchResultRequest(
-    async ({ requestId, ...data }: AndroidAutoGetSearchResultsEvent) => {
-      const { results, total } = await callback(data);
-      TrackPlayer.resolveSearchResultRequest(
-        requestId,
-        results,
-        total ?? results.length,
-      );
-    },
-  ).remove;
+  return TrackPlayer.onGetSearchResultRequest(async (event: unknown) => {
+    const { requestId, ...data } = event as AndroidAutoGetSearchResultsEvent;
+    const { results, total } = await callback(data);
+    TrackPlayer.resolveSearchResultRequest(
+      requestId,
+      results,
+      total ?? results.length,
+    );
+  }).remove;
 }
 
 export interface MediaProvider {
@@ -111,7 +110,7 @@ export interface MediaProvider {
   }) => Promise<{ children: Track[]; total: number }>;
   search?: (event: {
     query: string;
-    extras?: Record<string, any>;
+    extras?: Record<string, unknown>;
     page: number;
     pageSize: number;
   }) => Promise<{ results: Track[]; total: number }>;

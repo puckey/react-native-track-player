@@ -14,9 +14,7 @@ export function PlayPauseButton() {
       {buffering ? (
         <ActivityIndicator />
       ) : (
-        <TouchableWithoutFeedback
-          onPress={TrackPlayer.togglePlayback}
-        >
+        <TouchableWithoutFeedback onPress={TrackPlayer.togglePlayback}>
           <Icon
             name={playing ? 'pause' : 'play'}
             size={48}

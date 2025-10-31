@@ -41,9 +41,7 @@ export function OptionSheet() {
               value: 'stop-playback-and-remove-notification',
             },
           ]}
-          value={
-            currentOptions.android.appKilledPlaybackBehavior
-          }
+          value={currentOptions.android.appKilledPlaybackBehavior}
           onSelect={(appKilledPlaybackBehavior: AppKilledPlaybackBehavior) => {
             TrackPlayer.updateOptions({
               android: {

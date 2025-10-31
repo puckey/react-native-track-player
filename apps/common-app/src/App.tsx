@@ -13,9 +13,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import TrackPlayer, {
-  useActiveTrack
-} from 'react-native-track-player';
+import TrackPlayer, { useActiveTrack } from 'react-native-track-player';
 import {
   ActionSheet,
   Button,

@@ -192,6 +192,7 @@ export interface IOSUpdateOptions {
  * });
  * ```
  */
+// FIXME: shouldn't this just be a `DeepPartial<Options>`??? Also, it isn't being used anywhere
 export interface UpdateOptions {
   /** Android-specific configuration options */
   android?: Partial<AndroidUpdateOptions>;

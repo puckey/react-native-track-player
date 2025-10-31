@@ -1,80 +1,66 @@
 import { DeviceEventEmitter } from 'react-native';
 
-import { State } from '../src/constants/State';
+import type {
+  PlaybackErrorEvent,
+  RepeatMode as RepeatModeType,
+} from '../src/features';
+import { State } from './TrackPlayer/State';
+import { Event } from './TrackPlayer/Event';
 
-// Web-specific event constants
-const Event = {
-  PlaybackState: 'playback-state',
-  PlaybackProgressUpdated: 'playback-progress-updated',
-  PlaybackQueueEnded: 'playback-queue-ended',
-  PlaybackPlayWhenReadyChanged: 'playback-play-when-ready-changed',
-  PlaybackActiveTrackChanged: 'playback-active-track-changed',
-};
 import type { Spec } from '../src/NativeTrackPlayer';
-import type { PlaybackState, Track, UpdateOptions } from '../src/types';
+import type {
+  Options,
+  PlaybackProgressUpdatedEvent,
+  PlaybackQueueEndedEvent,
+  PlaybackState,
+  PlayingState,
+  RepeatModeChangedEvent,
+  Track,
+  UpdateOptions,
+} from '../src/features';
 import { PlaylistPlayer, RepeatMode } from './TrackPlayer';
 import { SetupNotCalledError } from './TrackPlayer/SetupNotCalledError';
 
 export class TrackPlayerModule extends PlaylistPlayer implements Spec {
   protected emitter = DeviceEventEmitter;
   protected progressUpdateEventInterval: NodeJS.Timeout | undefined;
+  protected options: Options = {
+    forwardJumpInterval: 15,
+    backwardJumpInterval: 15,
+    progressUpdateEventInterval: null,
+    repeatMode: RepeatMode.Off,
+    capabilities: [], // irrelevant in web-world
+  };
 
-  public getConstants() {
-    return {
-      // Capabilities
-      CAPABILITY_PLAY: 'play',
-      CAPABILITY_PLAY_FROM_ID: 'play-from-id',
-      CAPABILITY_PLAY_FROM_SEARCH: 'play-from-search',
-      CAPABILITY_PAUSE: 'pause',
-      CAPABILITY_STOP: 'stop',
-      CAPABILITY_SEEK_TO: 'seek-to',
-      CAPABILITY_SKIP: 'skip',
-      CAPABILITY_SKIP_TO_NEXT: 'skip-to-next',
-      CAPABILITY_SKIP_TO_PREVIOUS: 'skip-to-previous',
-      CAPABILITY_SET_RATING: 'set-rating',
-      CAPABILITY_JUMP_FORWARD: 'jump-forward',
-      CAPABILITY_JUMP_BACKWARD: 'jump-backward',
-
-      // Rating Types
-      RATING_HEART: 'heart',
-      RATING_THUMBS_UP_DOWN: 'thumbs-up-down',
-      RATING_3_STARS: '3-stars',
-      RATING_4_STARS: '4-stars',
-      RATING_5_STARS: '5-stars',
-      RATING_PERCENTAGE: 'percentage',
-
-      // Pitch Algorithms
-      PITCH_ALGORITHM_LINEAR: 'linear',
-      PITCH_ALGORITHM_MUSIC: 'music',
-      PITCH_ALGORITHM_VOICE: 'voice',
-
-      // States
-      STATE_BUFFERING: 'STATE_BUFFERING',
-      STATE_LOADING: 'STATE_LOADING',
-      STATE_NONE: 'STATE_NONE',
-      STATE_PAUSED: 'STATE_PAUSED',
-      STATE_PLAYING: 'STATE_PLAYING',
-      STATE_READY: 'STATE_READY',
-      STATE_STOPPED: 'STATE_STOPPED',
-
-      // Repeat Modes
-      REPEAT_OFF: RepeatMode.Off,
-      REPEAT_TRACK: RepeatMode.Track,
-      REPEAT_QUEUE: RepeatMode.Playlist,
-    };
+  private addStubListener() {
+    return this.emitter.addListener('_', () => {});
   }
 
   // observe and emit state changes
-  public get state(): PlaybackState {
+  protected get state(): PlaybackState {
     return super.state;
   }
-  public set state(newState: PlaybackState) {
-    super.state = newState;
-    this.emitter.emit(Event.PlaybackState, newState);
-  }
+  protected set state(newState: PlaybackState) {
+    const didStateChange = newState.state !== super.state.state;
+    const didErrorChange =
+      newState.state === State.Error && super.state.state === State.Error
+        ? newState.error === super.state.error
+        : false;
 
-  public async updateOptions(options: UpdateOptions) {
-    this.setupProgressUpdates(options.progressUpdateEventInterval);
+    super.state = newState;
+
+    if (!didStateChange && !didErrorChange) {
+      return;
+    }
+
+    // emit stage change events
+    this.emitter.emit(Event.PlaybackState, newState);
+    if (newState.state === State.Error) {
+      const event: PlaybackErrorEvent = {
+        error: newState.error.error,
+      };
+      this.emitter.emit(Event.PlaybackError, event);
+    }
   }
 
   protected setupProgressUpdates(interval?: number) {
@@ -82,13 +68,14 @@ export class TrackPlayerModule extends PlaylistPlayer implements Spec {
     this.clearUpdateEventInterval();
     if (interval) {
       this.clearUpdateEventInterval();
-      this.progressUpdateEventInterval = setInterval(async () => {
+      this.progressUpdateEventInterval = setInterval(() => {
         if (this.state.state === State.Playing) {
-          const progress = await this.getProgress();
-          this.emitter.emit(Event.PlaybackProgressUpdated, {
+          const progress = this.getProgress();
+          const event: PlaybackProgressUpdatedEvent = {
             ...progress,
-            track: this.currentIndex,
-          });
+            track: this.currentIndex || 0,
+          };
+          this.emitter.emit(Event.PlaybackProgressUpdated, event);
         }
       }, interval * 1000);
     }
@@ -100,19 +87,185 @@ export class TrackPlayerModule extends PlaylistPlayer implements Spec {
     }
   }
 
-  protected async onPlaylistEnded() {
-    await super.onPlaylistEnded();
+  protected onPlaylistEnded() {
+    super.onPlaylistEnded();
     this.emitter.emit(Event.PlaybackQueueEnded, {
-      track: this.currentIndex,
+      track: this.currentIndex ?? 0,
       position: this.element!.currentTime,
     });
   }
 
-  public get playWhenReady(): boolean {
-    return super.playWhenReady;
+  /****************************************
+   * MARK: init and config
+   ****************************************/
+  // setupPlayer is inherited from Player
+
+  public updateOptions(options: UpdateOptions) {
+    this.options = {
+      ...this.options,
+      ...(options as Omit<UpdateOptions, 'android' | 'ios'>),
+    };
+    this.setupProgressUpdates(options.progressUpdateEventInterval);
+    this.emitter.emit(Event.PlaybackOptionsChanged, options);
   }
 
-  public set playWhenReady(pwr: boolean) {
+  public getOptions() {
+    return this.options;
+  }
+
+  /****************************************
+   * MARK: events
+   ****************************************/
+  public onAndroidControllerConnected() {
+    return this.addStubListener();
+  }
+  public onAndroidControllerDisconnected() {
+    return this.addStubListener();
+  }
+  public onMetadataChapterReceived() {
+    return this.addStubListener();
+  }
+  public onMetadataCommonReceived() {
+    return this.addStubListener();
+  }
+  public onMetadataTimedReceived() {
+    return this.addStubListener();
+  }
+
+  public onPlaybackActiveTrackChanged(callback: (event: object) => void) {
+    return this.emitter.addListener(Event.PlaybackActiveTrackChanged, callback);
+  }
+
+  public onPlaybackError(callback: (event: { error?: unknown }) => void) {
+    return this.emitter.addListener(Event.PlaybackError, callback);
+  }
+
+  public onPlaybackMetadata() {
+    return this.addStubListener();
+  }
+
+  public onPlaybackPlayWhenReadyChanged(
+    callback: (event: { playWhenReady: boolean }) => void,
+  ) {
+    return this.emitter.addListener(
+      Event.PlaybackPlayWhenReadyChanged,
+      callback,
+    );
+  }
+
+  public onPlaybackPlayingState(callback: (state: PlayingState) => void) {
+    return this.emitter.addListener(
+      Event.PlaybackState,
+      (state: PlaybackState) => {
+        return callback(this.getPlayingState(state));
+      },
+    );
+  }
+
+  public onPlaybackProgressUpdated(
+    callback: (event: PlaybackProgressUpdatedEvent) => void,
+  ) {
+    return this.emitter.addListener(Event.PlaybackProgressUpdated, callback);
+  }
+
+  public onPlaybackQueueEnded(
+    callback: (event: PlaybackQueueEndedEvent) => void,
+  ) {
+    return this.emitter.addListener(Event.PlaybackQueueEnded, callback);
+  }
+
+  public onPlaybackRepeatModeChanged(
+    callback: (event: RepeatModeChangedEvent) => void,
+  ) {
+    return this.emitter.addListener(Event.PlaybackRepeatModeChanged, callback);
+  }
+
+  public onPlaybackState(callback: (state: PlaybackState) => void) {
+    return this.emitter.addListener(Event.PlaybackState, callback);
+  }
+
+  public onRemoteBookmark() {
+    return this.addStubListener();
+  }
+  public onRemoteDislike() {
+    return this.addStubListener();
+  }
+  public onRemoteJumpBackward() {
+    return this.addStubListener();
+  }
+  public onRemoteJumpForward() {
+    return this.addStubListener();
+  }
+  public onRemoteLike() {
+    return this.addStubListener();
+  }
+  public onRemoteNext() {
+    return this.addStubListener();
+  }
+  public onRemotePause() {
+    return this.addStubListener();
+  }
+  public onRemotePlay() {
+    return this.addStubListener();
+  }
+  public onRemotePlayId() {
+    return this.addStubListener();
+  }
+  public onRemotePlaySearch() {
+    return this.addStubListener();
+  }
+  public onRemotePrevious() {
+    return this.addStubListener();
+  }
+  public onRemoteSeek() {
+    return this.addStubListener();
+  }
+  public onRemoteSetRating() {
+    return this.addStubListener();
+  }
+  public onRemoteSkip() {
+    return this.addStubListener();
+  }
+  public onRemoteStop() {
+    return this.addStubListener();
+  }
+
+  public onOptionsChanged(callback: (event: Options) => void) {
+    return this.emitter.addListener(Event.PlaybackOptionsChanged, callback);
+  }
+
+  /****************************************
+   * MARK: player api
+   ****************************************/
+  public load(track: Track, onComplete?: (track: Track) => void) {
+    if (!this.element) throw new SetupNotCalledError();
+    const lastTrack = this.current;
+    const lastPosition = this.element.currentTime;
+    super.load(track, () => {
+      onComplete?.(track);
+      this.emitter.emit(Event.PlaybackActiveTrackChanged, {
+        lastTrack,
+        lastPosition,
+        lastIndex: this.lastIndex,
+        index: this.currentIndex,
+        track,
+      });
+    });
+  }
+
+  // reset is inherited from PlaylistPlayer
+
+  // play is inherited from Player
+
+  // pause is inherited from Player
+
+  public togglePlayback() {
+    return super.togglePlayback();
+  }
+
+  // stop is inherited from PlaylistPlayer
+
+  public setPlayWhenReady(pwr: boolean) {
     const didChange = pwr !== this._playWhenReady;
     super.playWhenReady = pwr;
 
@@ -121,84 +274,129 @@ export class TrackPlayerModule extends PlaylistPlayer implements Spec {
         playWhenReady: this._playWhenReady,
       });
     }
+
+    return super.playWhenReady;
   }
 
-  public async getPlayWhenReady(): Promise<boolean> {
-    return this.playWhenReady;
+  public getPlayWhenReady(): boolean {
+    return super.playWhenReady;
   }
 
-  public async setPlayWhenReady(pwr: boolean): Promise<boolean> {
-    this.playWhenReady = pwr;
-    return this.playWhenReady;
+  // seekTo is inherited from Player
+
+  // seekBy is inherited from Player
+
+  // setVolume is inherited from Player
+
+  // getVolume is inherited from Player
+
+  // setRate is inherited from Player
+
+  // getRate is inherited from Player
+
+  // getProgress is inherited from Player
+
+  public getPlaybackState(): PlaybackState {
+    return this.state;
   }
 
-  public async load(track: Track) {
-    if (!this.element) throw new SetupNotCalledError();
-    const lastTrack = this.current;
-    const lastPosition = this.element.currentTime;
-    await super.load(track);
-
-    this.emitter.emit(Event.PlaybackActiveTrackChanged, {
-      lastTrack,
-      lastPosition,
-      lastIndex: this.lastIndex,
-      index: this.currentIndex,
-      track,
-    });
+  public getPlayingState(state?: PlaybackState): PlayingState {
+    const curState = state ? state.state : this.state.state;
+    return {
+      playing: curState === State.Playing,
+      buffering: curState === State.Buffering,
+    };
   }
 
-  public async getQueue(): Promise<Track[]> {
+  public getRepeatMode() {
+    return super.getRepeatMode();
+  }
+
+  public setRepeatMode(mode: RepeatModeType) {
+    const didChange = this.repeatMode !== mode;
+    super.setRepeatMode(mode);
+
+    if (didChange) {
+      this.emitter.emit(Event.PlaybackRepeatModeChanged, {
+        repeatMode: mode,
+      });
+    }
+  }
+
+  public getPlaybackError() {
+    if (this.state.state === State.Error) {
+      return this.state.error?.error || null;
+    }
+    return null;
+  }
+
+  // retry is inherited from Player
+
+  /****************************************
+   * MARK: playlist management
+   ****************************************/
+  // add is inherited from PlaylistPlayer
+
+  // move is inherited from PlaylistPlayer
+
+  // remove is inherited from PlaylistPlayer
+
+  // removeUpcomingTracks is inherited from PlaylistPlayer
+
+  // skip is inherited from PlaylistPlayer
+
+  // skipToNext is inherited from PlaylistPlayer
+
+  // skipToPrevious is inherited from PlaylistPlayer
+
+  // updateMetadataForTrack is inherited from PlaylistPlayer
+
+  // updateNowPlayingMetadata is inherited from PlaylistPlayer
+
+  public setQueue(queue: Track[]) {
+    this.stop();
+    this.playlist = queue;
+    if (queue.length) {
+      this.skip(0);
+    }
+  }
+
+  public getQueue(): Track[] {
     return this.playlist;
   }
 
-  public async setQueue(queue: Track[]) {
-    await this.stop();
-    this.playlist = queue;
-  }
+  // getTrack is inherited from PlaylistPlayer
 
-  public async getActiveTrack(): Promise<Track | undefined> {
-    return this.current;
-  }
-
-  public async getActiveTrackIndex(): Promise<number | undefined> {
+  public getActiveTrackIndex(): number | undefined {
     // per the existing spec, this should throw if setup hasn't been called
     if (!this.element || !this.player) throw new SetupNotCalledError();
     return this.currentIndex;
   }
 
-  public async getPlaybackState(): Promise<PlaybackState> {
-    return this.state;
+  public getActiveTrack(): Track | undefined {
+    return this.current;
   }
 
-  /**
-   * overrides to match interface definition
-   *
-   * NOTE: these can be removed once we migrate to a sync API
-   */
-  public async pause() {
-    return super.pause();
-  }
-  public async togglePlayback() {
-    return super.togglePlayback();
-  }
-  public async seekBy(seconds: number) {
-    return super.seekBy(seconds);
-  }
-  public async seekTo(seconds: number) {
-    return super.seekTo(seconds);
-  }
-  public async setVolume(volume: number) {
-    return super.setVolume(volume);
-  }
-  // @ts-expect-error - promise return
-  public async getVolume() {
-    return super.getVolume();
-  }
-  // @ts-expect-error - promise return
-  public async setRate(rate: number) {
-    return super.setRate(rate);
-  }
+  /****************************************
+   * MARK: Android methods
+   ****************************************/
+  public acquireWakeLock() {}
+  public abandonWakeLock() {}
 
-  public async acquireWakeLock() {}
-  public async abandonWakeLock() {}
+  /****************************************
+   * MARK: Media Browser Methods
+   ****************************************/
+  public onGetItemRequest() {
+    return this.addStubListener();
+  }
+  public resolveGetItemRequest() {}
+  public onGetChildrenRequest() {
+    return this.addStubListener();
+  }
+  public resolveGetChildrenRequest() {}
+  public onGetSearchResultRequest() {
+    return this.addStubListener();
+  }
+  public resolveSearchResultRequest() {}
+  public setMediaBrowserReady() {}
 }

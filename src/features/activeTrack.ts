@@ -1,4 +1,3 @@
-
 import TrackPlayer from '../NativeTrackPlayer';
 import { useUpdatedNativeValue } from '../utils/useUpdatedNativeValue';
 import type { Track } from './queue';
